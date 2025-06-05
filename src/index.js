@@ -8,6 +8,50 @@ const Logger = require('./utils/logger');
 // Initialize bot
 const bot = new Telegraf(config.telegram.token);
 
+// In-memory storage for user preferences
+const userPrefs = {};
+
+// Supported languages
+const supportedLanguages = {
+  en: 'English',
+  bn: 'Bangla',
+  hi: 'Hindi',
+  ar: 'Arabic',
+  id: 'Indonesian',
+  vi: 'Vietnamese'
+};
+
+// Inline keyboard for language selection
+const languageKeyboard = {
+  reply_markup: {
+    inline_keyboard: Object.keys(supportedLanguages).map(code => [{
+      text: supportedLanguages[code],
+      callback_data: `lang_${code}`
+    }])
+  }
+};
+
+// Inline keyboard for sentiment selection
+const sentimentKeyboard = {
+  reply_markup: {
+    inline_keyboard: [
+      [{ text: 'Positive', callback_data: 'sent_positive' }],
+      [{ text: 'Neutral', callback_data: 'sent_neutral' }],
+      [{ text: 'Negative', callback_data: 'sent_negative' }]
+    ]
+  }
+};
+
+// Inline keyboard for type selection
+const typeKeyboard = {
+  reply_markup: {
+    inline_keyboard: [
+      [{ text: 'Good', callback_data: 'type_good' }],
+      [{ text: 'Bad', callback_data: 'type_bad' }]
+    ]
+  }
+};
+
 // Command handler
 class CommandHandler {
   constructor(bot) {
@@ -62,7 +106,8 @@ class CommandHandler {
       await command.run({
         ctx,
         args,
-        config
+        config,
+        userPrefs
       });
     } catch (error) {
       Logger.error({
@@ -78,10 +123,51 @@ class CommandHandler {
   }
 }
 
+// Handle /start command for preferences setup
+bot.command('start', async (ctx) => {
+  const chatId = ctx.chat.id;
+  delete userPrefs[chatId]; // Reset preferences
+  await ctx.reply('Welcome! Let’s set up your preferences. Choose a language:', languageKeyboard);
+});
+
+// Handle inline button callbacks
+bot.on('callback_query', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const data = ctx.callbackQuery.data;
+
+  if (!userPrefs[chatId]) userPrefs[chatId] = {};
+
+  if (data.startsWith('lang_')) {
+    const lang = data.split('_')[1];
+    if (supportedLanguages[lang]) {
+      userPrefs[chatId].language = lang;
+      await ctx.deleteMessage();
+      await ctx.reply(`Language set to ${supportedLanguages[lang]}. Now choose a sentiment:`, sentimentKeyboard);
+    }
+  } else if (data.startsWith('sent_')) {
+    const sentiment = data.split('_')[1];
+    userPrefs[chatId].sentiment = sentiment;
+    await ctx.deleteMessage();
+    await ctx.reply(`Sentiment set to ${sentiment}. Now choose a type:`, typeKeyboard);
+  } else if (data.startsWith('type_')) {
+    const type = data.split('_')[1];
+    userPrefs[chatId].type = type;
+    await ctx.deleteMessage();
+    await ctx.reply('Setup complete! Welcome to the bot. Use /teach <question> | <answer> to train, or send a message to chat.');
+  }
+
+  ctx.answerCallbackQuery();
+});
+
 // SIM API handler
 async function handleSimApi(ctx) {
+  const chatId = ctx.chat.id;
   const question = ctx.message.text;
   const chatType = ctx.chat.type === 'private' ? 'Private' : 'Group';
+
+  if (!userPrefs[chatId] || !userPrefs[chatId].language) {
+    return ctx.reply('Please set up your preferences using /start.');
+  }
 
   const logData = {
     username: ctx.from.username,
@@ -96,7 +182,7 @@ async function handleSimApi(ctx) {
   const payload = {
     api: config.nexalo.apiKey,
     question: question,
-    language: config.language
+    language: userPrefs[chatId].language
   };
 
   try {
