@@ -187,5 +187,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Contact
 
-For support, contact the developer on GitHub: [@1dev-hridoy](https://github.com/1dev-hridoy).
+For support, contact the developer on GitHub: [@1dev-hridoy](https://github.com/1dev-hridoy). or join discord
 
